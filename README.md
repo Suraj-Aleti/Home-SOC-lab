@@ -20,15 +20,15 @@ Built a personal Security Operations Center (SOC) lab to gain hands-on experienc
 | Metasploitable2 | Victim | Deliberately vulnerable Ubuntu 8.04 VM, VirtualBox |
 | Splunk Enterprise (Free tier) | SIEM | Installed on host machine, receives forwarded logs from both VMs |
 
-**Network:** Both VMs on a VirtualBox **Host-only Adapter** (isolated from the internet, host and VMs can reach each other). Chosen over Internal Network since it auto-assigns IPs via DHCP. Kali additionally has a second, NAT-attached adapter used solely for package installation (e.g. `apt install suricata`) — Metasploitable2 never received a NAT adapter, preserving its full isolation.
+**Network:** Both VMs on a VirtualBox **Host-only Adapter** (isolated from the internet, host and VMs can reach each other). Chosen over Internal Network since it auto-assigns IPs via DHCP. Kali additionally has a second, NAT-attached adapter used solely for package installation (e.g. `apt install suricata`) Metasploitable2 never received a NAT adapter, preserving its full isolation.
 
 **Log pipeline (Metasploitable2):** `syslog` (via `sysklogd`) forwards events over UDP to the host machine's Host-only IP, where Splunk listens on port 514.
 
 **Log pipeline (Kali):** Kali runs `rsyslog` (modern syslog daemon) configured to forward to the same Splunk UDP:514 listener. Suricata's alert output (`/var/log/suricata/fast.log`) is tailed and piped into `logger -t suricata`, tagging each alert so it rides the existing syslog forwarding pipe into Splunk alongside Kali's other system logs.
 
-**Notable setup issue resolved (Metasploitable2):** Metasploitable2's ancient `sysklogd` did not correctly parse the `@host:port` syslog forwarding syntax — the `:514` port suffix caused silent forwarding failure. Fixed by using the bare `@host` syntax (defaults to port 514). Confirmed the fix using `tcpdump` on the victim VM to verify outbound UDP packets before/after the config change.
+**Notable setup issue resolved (Metasploitable2):** Metasploitable2's ancient `sysklogd` did not correctly parse the `@host:port` syslog forwarding syntax and the `:514` port suffix caused silent forwarding failure. Fixed by using the bare `@host` syntax (defaults to port 514). Confirmed the fix using `tcpdump` on the victim VM to verify outbound UDP packets before/after the config change.
 
-**Notable setup issue resolved (Kali):** Kali initially had no `rsyslog` installed at all (minimal image). After installing it and editing the config, the running `rsyslogd` process had not reloaded the new config — a full `systemctl restart` (rather than assuming the prior restart had applied it) was required before forwarding actually began. Verified with `tcpdump` on the Host-only interface before and after.
+**Notable setup issue resolved (Kali):** Kali initially had no `rsyslog` installed at all (minimal image). After installing it and editing the config, the running `rsyslogd` process had not reloaded the new config. It was a full `systemctl restart` (rather than assuming the prior restart had applied it) was required before forwarding actually began. Verified with `tcpdump` on the Host-only interface before and after.
 
 **Field extraction:** Configured a custom Splunk field extraction (`src_ip`) against `sourcetype=syslog` so source IPs are automatically parsed from raw event text, rather than requiring an inline `rex` in every search.
 
@@ -56,7 +56,7 @@ index=main sourcetype=syslog "Failed password"
 index=main sourcetype=syslog ("Failed password" OR "Accepted password")
 | table _time, src_ip, _raw
 ```
-Sorted by time, this shows the narrative: multiple failures followed by a successful login from the same source IP — mapping to **T1110 (Brute Force)** followed by **T1078 (Valid Accounts)**.
+Sorted by time, this shows the narrative: multiple failures followed by a successful login from the same source IP mapped to **T1110 (Brute Force)** followed by **T1078 (Valid Accounts)**.
 
 <img width="2880" height="1516" alt="image" src="https://github.com/user-attachments/assets/4478f6d6-8baa-4947-80a5-600389efc464" />
 
@@ -86,7 +86,7 @@ nmap -sV 192.168.56.101
 
 None of these entries contained the scanning source IP, and none were tagged or correlated as scan activity — each service simply logged its own confusion about the probe traffic it received, with no way to connect the dots between them without manually correlating timestamps across sources.
 
-**Finding:** Port scan activity produced no unified detection signal on this host. Without network-layer visibility (e.g., a NIDS or firewall connection logging), a port scan is effectively invisible as a discrete event — it only surfaces as disconnected background noise across whichever services happen to react to the probes, which would be extremely difficult to correlate at any meaningful scale. This is a real, common detection gap: application/syslog-level logging alone is insufficient to catch reconnaissance activity; it requires purpose-built network-layer monitoring.
+**Finding:** Port scan activity produced no unified detection signal on this host. Without network-layer visibility (e.g., a NIDS or firewall connection logging), a port scan is effectively invisible as a discrete event and it only surfaces as disconnected background noise across whichever services happen to react to the probes, which would be extremely difficult to correlate at any meaningful scale. This is a real, common detection gap: application/syslog-level logging alone is insufficient to catch reconnaissance activity; it requires purpose-built network-layer monitoring.
 
 
 ---
@@ -130,7 +130,7 @@ index=main "suricata" "ET SCAN"
 
 ## Attack Simulated #3 — Exploitation of a Known Vulnerable Service (MITRE ATT&CK T1190)
 
-**What was done:** The nmap scan (Attack #2) identified `vsftpd 2.3.4` running on Metasploitable2 — a version with a publicly known, intentionally-planted backdoor. Used Metasploit to exploit it directly from Kali:
+**What was done:** The nmap scan (Attack #2) identified `vsftpd 2.3.4` running on Metasploitable2: a version with a publicly known, intentionally-planted backdoor. Used Metasploit to exploit it directly from Kali:
 
 ```
 msfconsole
@@ -141,9 +141,9 @@ set LHOST 192.168.56.102
 run
 ```
 
-**Result:** Full root shell obtained with zero authentication — the backdoor activates when a username containing `:)` is sent to the FTP service, which opens a listener on TCP port 6200 that Metasploit then connects to automatically. Confirmed with `getuid` → `root`.
+**Result:** Full root shell obtained with zero authentication. The backdoor activates when a username containing `:)` is sent to the FTP service, which opens a listener on TCP port 6200 that Metasploit then connects to automatically. Confirmed with `getuid` → `root`.
 
-**Initial finding — no detection at all:** Checked both `syslog` (Metasploitable2/Kali) and the existing stock Suricata ruleset — **nothing related to the exploit appeared anywhere.** Unlike the port scan (which at least produced incidental noise), this exploit left **zero trace** in any existing log source: vsftpd does not log the malicious connection any differently than a normal one, and the stock Suricata ruleset had no signature for this specific, well-known backdoor. This is a more serious gap than Attack #2 — a scan is reconnaissance, but this is a full compromise, and it was completely invisible.
+**Initial finding: no detection at all:** Checked both `syslog` (Metasploitable2/Kali) and the existing stock Suricata ruleset — **nothing related to the exploit appeared anywhere.** Unlike the port scan (which at least produced incidental noise), this exploit left **zero trace** in any existing log source: vsftpd does not log the malicious connection any differently than a normal one, and the stock Suricata ruleset had no signature for this specific, well-known backdoor. This is a more serious gap than Attack #2: a scan is reconnaissance, but this is a full compromise, and it was completely invisible.
 
 **Closing the gap — writing a custom Suricata detection:** Wrote two custom rules targeting the two network-visible stages of this exploit (the trigger string and the resulting backdoor shell connection), added to `/var/lib/suricata/rules/local.rules` (Suricata's actual default rule path — note: NOT `/etc/suricata/rules/`, which is a separate directory that isn't loaded by default; had to add `local.rules` explicitly under `rule-files:` in `suricata.yaml` and copy the rule file to the correct path):
 
@@ -189,4 +189,3 @@ index=main "suricata" "CUSTOM"
 
 ---
 
-*Lab built using VirtualBox, Kali Linux, Metasploitable2, and Splunk Enterprise (Free tier). All activity conducted against self-hosted, isolated VMs — no external systems targeted.*
