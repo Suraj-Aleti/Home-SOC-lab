@@ -58,7 +58,8 @@ index=main sourcetype=syslog ("Failed password" OR "Accepted password")
 ```
 Sorted by time, this shows the narrative: multiple failures followed by a successful login from the same source IP — mapping to **T1110 (Brute Force)** followed by **T1078 (Valid Accounts)**.
 
-**Screenshot:** _[insert screenshot of the stats table / alert firing here]_
+<img width="2880" height="1516" alt="image" src="https://github.com/user-attachments/assets/4478f6d6-8baa-4947-80a5-600389efc464" />
+
 
 **Result:** Detection successfully flagged the brute-force pattern once failure count exceeded the threshold.
 
@@ -87,7 +88,6 @@ None of these entries contained the scanning source IP, and none were tagged or 
 
 **Finding:** Port scan activity produced no unified detection signal on this host. Without network-layer visibility (e.g., a NIDS or firewall connection logging), a port scan is effectively invisible as a discrete event — it only surfaces as disconnected background noise across whichever services happen to react to the probes, which would be extremely difficult to correlate at any meaningful scale. This is a real, common detection gap: application/syslog-level logging alone is insufficient to catch reconnaissance activity; it requires purpose-built network-layer monitoring.
 
-**Screenshot:** _[insert screenshot of the scattered Splunk events here]_
 
 ---
 
@@ -124,7 +124,7 @@ index=main "suricata" "ET SCAN"
 
 **Before / after finding:** Application-level syslog alone could not surface the port scan as a discrete event. Adding network-layer monitoring (Suricata) closed that gap, producing a single, correctly-attributed, signature-matched alert for the same activity — demonstrating why SOC environments layer network-based detection (NIDS) alongside host/application log aggregation rather than relying on either alone.
 
-**Screenshot:** _[insert screenshot of the Suricata alert in Splunk here]_
+<img width="2874" height="1510" alt="image" src="https://github.com/user-attachments/assets/5ffdbc07-4ae6-4af1-b636-ccd6e391c594" />
 
 ---
 
@@ -169,7 +169,7 @@ index=main "suricata" "CUSTOM"
 
 **Finding:** A fully successful, zero-authentication root compromise produced no signal whatsoever in host logging or stock NIDS rules. Closing this gap required writing custom, exploit-specific network signatures — general-purpose rulesets and default application logging are not sufficient against known backdoors unless a signature specifically exists for them. This is a realistic illustration of why detection engineering requires proactively researching and authoring rules for known threats relevant to an environment, rather than assuming default tooling covers everything.
 
-**Screenshot:** _[insert screenshot of the custom rule alerts in Splunk here]_
+<img width="2880" height="1518" alt="image" src="https://github.com/user-attachments/assets/1d711ea0-6e38-491a-9ae1-2dc72a563809" />
 
 ---
 
@@ -178,7 +178,6 @@ index=main "suricata" "CUSTOM"
 - SSH auth logs never contain plaintext passwords, by design — brute-force detection therefore relies on **behavioral thresholds** (failure counts per source over time), not credential inspection.
 - Metasploitable2 has no firewall/connection logging enabled by default, so port scan activity produced only scattered, uncorrelated application-level noise (see Attack #2) rather than a discrete, detectable event — a real gap that required network-layer monitoring (e.g. a NIDS like Suricata) to close.
 - A successful root-level exploit (Attack #3) produced zero trace in any default log source or stock NIDS ruleset — detection required authoring custom, exploit-specific signatures, underscoring that default tooling does not automatically cover known threats without deliberate signature research.
-- _[add any false-positive considerations, e.g. shared NAT IPs, once relevant]_
 
 ## What I'd Improve
 
